@@ -1,0 +1,33 @@
+{
+  "name": "desafio-qa-prefeitura-rio",
+  "version": "1.0.0",
+  "description": "Suite de testes automatizados (Playwright + k6) para o desafio tecnico de QA Senior - Prefeitura do Rio",
+  "scripts": {
+    "test": "playwright test",
+    "test:list": "playwright test --list",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:security": "playwright test tests/api/security/",
+    "test:webhook": "playwright test tests/api/webhook/",
+    "report": "playwright show-report",
+    "perf:smoke": "k6 run perf/smoke.js",
+    "perf:load": "k6 run perf/load.js",
+    "perf:stress": "k6 run perf/stress.js",
+    "perf:spike": "k6 run perf/spike.js"
+  },
+  "keywords": [
+    "qa",
+    "playwright",
+    "k6",
+    "api-testing",
+    "performance-testing"
+  ],
+  "author": "Andreia Oliveira",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^25.6.0"
+  }
+}

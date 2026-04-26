@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  api-tests:
+    name: Playwright API tests
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout qa-tests
+        uses: actions/checkout@v4
+
+      - name: Checkout API source
+        uses: actions/checkout@v4
+        with:
+          repository: prefeitura-rio/desafio-qa-senior
+          path: api-source
+
+      - name: Start API via Docker Compose
+        working-directory: api-source/api
+        run: |
+          docker compose up -d
+          echo "Waiting for API to be healthy..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health > /dev/null; then
+              echo "API healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API failed to become healthy in 30s"
+          docker compose logs
+          exit 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        id: tests
+        run: npx playwright test
+        env:
+          API_BASE_URL: http://localhost:8080
+          API_TOKEN: qa-challenge-token
+          WEBHOOK_SECRET: webhook-secret-2024
+
+      - name: Generate Markdown summary
+        if: always()
+        run: |
+          if [ -f test-results/results.json ]; then
+            node -e "
+              const r = require('./test-results/results.json');
+              const s = r.stats || {};
+              const total = (s.expected || 0) + (s.unexpected || 0) + (s.skipped || 0) + (s.flaky || 0);
+              const duration = ((s.duration || 0) / 1000).toFixed(2);
+              const status = (s.unexpected || 0) === 0 ? 'Suite verde' : 'Falhas detectadas';
+              let out = '';
+              out += '## Resultado dos testes Playwright\n\n';
+              out += '**Status:** ' + status + '\n\n';
+              out += '| Metrica | Valor |\n';
+              out += '|---|---|\n';
+              out += '| Total de testes | ' + total + ' |\n';
+              out += '| Passaram | ' + (s.expected || 0) + ' |\n';
+              out += '| Falharam | ' + (s.unexpected || 0) + ' |\n';
+              out += '| Pulados | ' + (s.skipped || 0) + ' |\n';
+              out += '| Flaky | ' + (s.flaky || 0) + ' |\n';
+              out += '| Duracao | ' + duration + 's |\n\n';
+              out += 'Relatorio HTML completo disponivel como artifact desta execucao.\n';
+              require('fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY, out);
+            "
+          else
+            echo "## Resultado dos testes Playwright" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Arquivo test-results/results.json nao foi gerado." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-html-report
+          path: playwright-report/
+          retention-days: 30
+
+      - name: Upload Playwright JSON results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-json-results
+          path: test-results/results.json
+          retention-days: 30
+
+      - name: Stop API
+        if: always()
+        working-directory: api-source/api
+        run: docker compose down
+
+  perf-smoke:
+    name: k6 smoke test
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    needs: api-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout API source
+        uses: actions/checkout@v4
+        with:
+          repository: prefeitura-rio/desafio-qa-senior
+          path: api-source
+
+      - name: Start API
+        working-directory: api-source/api
+        run: |
+          docker compose up -d
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Run smoke test
+        run: k6 run perf/smoke.js
+        env:
+          API_BASE_URL: http://localhost:8080
+          API_TOKEN: qa-challenge-token
+
+      - name: Stop API
+        if: always()
+        working-directory: api-source/api
+        run: docker compose down
