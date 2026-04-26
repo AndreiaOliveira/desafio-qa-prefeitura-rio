@@ -21,7 +21,7 @@ import { ENDPOINTS } from '../../../utils/constants';
  *  3. Nao dependemos de "estado limpo" - dependemos de "estado distinto".
  *
  * Em projetos com rollback transacional ou endpoint de cleanup, a abordagem
- * mais comum eh afterEach() resetando estado. Aqui o design da API torna
+ * mais comum é afterEach() resetando estado. Aqui o design da API torna
  * isolation por dado a alternativa mais pragmatica.
  */
 
@@ -36,7 +36,7 @@ test.describe('POST /api/v1/services/:id/favorite', () => {
     expect(body.service_id).toBe('s002');
   });
 
-  test('é idempotente: segunda chamada com mesmo id também retorna 200', async ({ request }) => {
+  test('valida que segunda chamada com mesmo id também retorna 200', async ({ request }) => {
  
     await request.post(ENDPOINTS.favorite('s003'));
     const secondResponse = await request.post(ENDPOINTS.favorite('s003'));
